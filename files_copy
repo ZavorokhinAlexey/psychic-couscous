@@ -1,0 +1,180 @@
+import os
+import shutil
+import time
+from docx import Document
+from tkinter import Tk, filedialog
+
+def select_path(title: str, initialdir: str = os.path.expanduser("~"), filetypes: tuple = (("All files", "*.*"),)):
+    """
+    Открывает окно выбора пути для файла или папки.
+
+    Args:
+        title: Заголовок окна выбора.
+        initialdir: Начальная директория, которая будет открыта.
+        filetypes: Кортеж типов файлов для фильтрации (например, (("Word files", "*.docx"), ("All files", "*.*"))).
+
+    Returns:
+        Строка с выбранным путем или None, если пользователь отменил выбор.
+    """
+    root = Tk()
+    root.withdraw()  # Скрываем главное окно Tkinter
+    if not filetypes or (isinstance(filetypes, (list, tuple)) and len(filetypes) == 0):
+        path = filedialog.askdirectory(title=title, initialdir=initialdir)
+    else:
+        path = filedialog.askopenfilename(title=title, initialdir=initialdir, filetypes=filetypes)
+    return path
+
+def process_docx_and_files(docx_path: str, source_folder: str, destination_folder: str):
+    """
+    Обрабатывает DOCX-файл, сравнивает его строки с именами файлов,
+    копирует совпадающие файлы и создает текстовый файл с оставшимися строками.
+
+    Args:
+        docx_path: Путь к DOCX-файлу.
+        source_folder: Путь к папке с исходными файлами.
+        destination_folder: Путь к папке назначения.
+    """
+
+    # 1. Получаем содержимое DOCX-файла и формируем список строк
+    try:
+        document = Document(docx_path)
+        docx_lines = []
+        for paragraph in document.paragraphs:
+            lines_in_paragraph = paragraph.text.split('\n')
+            docx_lines.extend(lines_in_paragraph)
+        for i in range(len(docx_lines)):
+            docx_lines[i] = docx_lines[i].replace('/', '_')
+        print(f"Прочитано {len(docx_lines)} строк из DOCX-файла: {docx_path}")
+        input("Для продолжения работы нажмите Enter")
+    except FileNotFoundError:
+        print(f"Ошибка: DOCX-файл не найден по пути: {docx_path}")
+        input("Для продолжения работы нажмите Enter")
+        return
+    except Exception as e:
+        print(f"Ошибка при чтении DOCX-файла: {e}")
+        input("Для продолжения работы нажмите Enter")
+        return
+
+    # 2. Получаем список файлов из исходной папки
+    try:
+        source_files = os.listdir(source_folder)
+        print(f"Найдено {len(source_files)} файлов в исходной папке: {source_folder}")
+        input("Для продолжения работы нажмите Enter")
+    except FileNotFoundError:
+        print(f"Ошибка: Исходная папка не найдена по пути: {source_folder}")
+        input("Для продолжения работы нажмите Enter")
+        return
+    except Exception as e:
+        print(f"Ошибка при чтении исходной папки: {e}")
+        input("Для продолжения работы нажмите Enter")
+        return
+
+    # Создаем папку назначения, если она не существует
+    os.makedirs(destination_folder, exist_ok=True)
+    print(f"Папка назначения: {destination_folder}")
+    input("Для продолжения работы нажмите Enter")
+
+    # 3. Сравниваем строки из DOCX и имена файлов, копируем и удаляем из списка
+    remaining_lines = list(docx_lines)  # Создаем копию списка для модификации
+    copied_files_count = 0
+
+    print("\nНачинаем сравнение и копирование файлов...")
+    input("Для продолжения работы нажмите Enter")
+    # Создаем копию списка исходных файлов, чтобы не модифицировать оригинальный список во время итерации
+    files_to_process = list(source_files)
+    for filename in files_to_process:
+        source_file_path = os.path.join(source_folder, filename)
+        # Проверяем, что это файл, а не папка
+        if os.path.isfile(source_file_path):
+            file_name_without_ext, _ = os.path.splitext(filename)
+            file_name_lower = file_name_without_ext.lower()
+
+            found_match = False
+            for line in docx_lines:
+                clean_line = line.strip()
+                if not clean_line:
+                    continue
+
+                if file_name_lower == clean_line.lower():
+                    destination_file_path = os.path.join(destination_folder, filename)
+                    try:
+                        shutil.copy2(source_file_path, destination_file_path)
+                        print(f"{copied_files_count}. Скопирован файл: {filename} (соответствует строке: '{clean_line}')")
+                        copied_files_count += 1
+                        # Удаляем строку из списка оставшихся
+                        if line in remaining_lines:
+                            remaining_lines.remove(line)
+                        found_match = True
+                        time.sleep(1)
+                        break  # Переходим к следующему файлу, т.к. строка найдена
+                    except FileNotFoundError:
+                        print(f"Ошибка: Исходный файл не найден для копирования: {filename}")
+                        input("Для продолжения работы нажмите Enter")
+                        continue
+                    except Exception as e:
+                        print(f"Ошибка при копировании файла {filename}: {e}")
+                        input("Для продолжения работы нажмите Enter")
+                        continue
+            if not found_match and filename in source_files:
+                source_files.remove(filename) # Если файл не совпал ни с одной строкой DOCX, удаляем его из списка исходных
+
+    print(f"\nПроцесс завершен. Скопировано {copied_files_count} файлов.")
+    input("Для продолжения работы нажмите Enter")
+
+    # 4. Создаем текстовый файл с оставшимися строками
+    output_text_filename = "remaining_items.txt"
+    output_text_path = os.path.join(destination_folder, output_text_filename)
+
+    if remaining_lines:
+        try:
+            with open(output_text_path, 'w', encoding='utf-8') as f:
+                for line in remaining_lines:
+                    f.write(line + '\n')
+            print(f"Создан файл '{output_text_filename}' в папке назначения с {len(remaining_lines)} оставшимися строками.")
+            input("Для продолжения работы нажмите Enter")
+        except Exception as e:
+            print(f"Ошибка при создании файла '{output_text_filename}': {e}")
+            input("Для продолжения работы нажмите Enter")
+    else:
+        print("Все строки из DOCX-файла были сопоставлены с файлами. Текстовый файл с оставшимися элементами не создан.")
+        input("Для продолжения работы нажмите Enter")
+
+# --- Основная часть скрипта ---
+if __name__ == "__main__":
+    print("Добро пожаловать! Выберите пути для работы.")
+
+    # 1. Выбор DOCX файла
+    docx_file_path = select_path(
+        title="Выберите DOCX файл с названиями",
+        filetypes=(("Word files", "*.docx"), ("All files", "*.*"))
+    )
+    if not docx_file_path:
+        print("Выбор DOCX файла отменен. Программа завершена.")
+        exit()
+
+    # 2. Выбор исходной папки
+    source_files_folder = select_path(
+        title="Выберите папку с исходными файлами",
+        initialdir=os.path.dirname(docx_file_path), # Начинаем поиск в папке DOCX файла
+        filetypes=[] # Пустой список означает выбор папки
+    )
+    if not source_files_folder:
+        print("Выбор исходной папки отменен. Программа завершена.")
+        exit()
+
+    # 3. Выбор папки назначения
+    destination_files_folder = select_path(
+        title="Выберите папку назначения для скопированных файлов",
+        initialdir=source_files_folder, # Начинаем поиск в исходной папке
+        filetypes=[] # Пустой список означает выбор папки
+    )
+    if not destination_files_folder:
+        print("Выбор папки назначения отменен. Программа завершена.")
+        exit()
+
+    print("\n--- Настройки ---")
+    print(f"DOCX файл: {docx_file_path}")
+    print(f"Исходная папка: {source_files_folder}")
+    print(f"Папка назначения: {destination_files_folder}")
+    print("-----------------")
+    input("Для продолжения работы нажмите Enter")
