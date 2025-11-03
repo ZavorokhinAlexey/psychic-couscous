@@ -178,3 +178,5 @@ if __name__ == "__main__":
     print(f"Папка назначения: {destination_files_folder}")
     print("-----------------")
     input("Для продолжения работы нажмите Enter")
+
+    process_docx_and_files(docx_file_path, source_files_folder, destination_files_folder)
